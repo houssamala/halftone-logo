@@ -19,29 +19,30 @@ if uploaded_file:
         tmp.write(uploaded_file.read())
         tmp_path = tmp.name
 
-    # قراءة المسارات
+    # قراءة المسارات والخصائص
     paths, attributes, svg_attributes = svg2paths2(tmp_path)
 
-    # تحقق من وجود مسارات
     if not paths:
-        st.error("الملف لا يحتوي على أي path صالح داخل SVG.")
+        st.error("الملف لا يحتوي على أي path داخل SVG.")
         st.stop()
 
-    # قراءة الأبعاد من viewBox أو width/height أو fallback
+    # محاولة استخراج الحجم من viewBox أو width/height
     try:
         if "viewBox" in svg_attributes:
             vb_values = list(map(float, svg_attributes["viewBox"].strip().split()))
-            _, _, width, height = vb_values
+            if len(vb_values) == 4:
+                _, _, width, height = vb_values
+            else:
+                st.error("الملف يحتوي على viewBox غير صالح (يجب أن يتكون من 4 أرقام).")
+                st.stop()
         else:
             width = float(svg_attributes.get("width", 600))
             height = float(svg_attributes.get("height", 600))
-    except Exception as e:
-        st.error("تعذر قراءة أبعاد الملف: تأكد من أن SVG يحتوي على viewBox أو أبعاد صالحة.")
+    except:
+        st.error("تعذر تحديد حجم الملف. تأكد من وجود viewBox أو width/height.")
         st.stop()
 
     center_x, center_y = width / 2, height / 2
-
-    # استخدام أول path فقط
     path: SvgPath = paths[0]
 
     # توليد الدوائر داخل الشكل فقط
@@ -64,11 +65,9 @@ if uploaded_file:
                 radius = max(min_radius, int(max_radius * scale))
                 circles.append(f'<circle cx="{x}" cy="{y}" r="{radius}" fill="black" />')
 
-    # إخراج SVG النهائي
     svg_output = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {int(width)} {int(height)}">
     {''.join(circles)}
     </svg>'''
 
-    # عرض وتحميل
     st.download_button("تحميل SVG", svg_output, file_name="halftone_precise.svg", mime="image/svg+xml")
     st.markdown(f'<div style="border:1px solid #ccc;">{svg_output}</div>', unsafe_allow_html=True)
