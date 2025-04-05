@@ -1,12 +1,11 @@
-
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageOps
 import numpy as np
 import io
 
 st.title("تأثير Halftone داخل شكل الشعار")
 
-uploaded_file = st.file_uploader("ارفع صورة الشعار (شكل مغلق بلون داكن على خلفية فاتحة)", type=["png", "jpg", "jpeg"])
+uploaded_file = st.file_uploader("ارفع صورة الشعار (PNG مفرغ أو JPEG بخلفية فاتحة)", type=["png", "jpg", "jpeg"])
 
 if uploaded_file:
     gradient_type = st.selectbox("نوع التدرج", ["دائري", "أفقي", "عمودي"])
@@ -14,31 +13,43 @@ if uploaded_file:
     min_size = st.slider("أصغر حجم للتكرار", 2, 20, 5)
     max_size = st.slider("أكبر حجم للتكرار", 10, 100, 20)
 
-    image = Image.open(uploaded_file).convert("L")
+    image_rgba = Image.open(uploaded_file).convert("RGBA")
     output_size = 600
-    center_x, center_y = output_size // 2, output_size // 2
+    image_rgba = image_rgba.resize((output_size, output_size))
+    r, g, b, a = image_rgba.split()
 
-    img_resized = image.resize((output_size, output_size))
-    mask_resized = np.array(img_resized) < 128
+    # كشف الشعار حسب الشفافية أو التباين
+    if a.getextrema()[0] < 255:
+        # PNG بخلفية شفافة: استخدم alpha
+        mask_resized = np.array(a) > 0
+    else:
+        # JPEG أو PNG غير شفاف: استخدم التباين
+        image_gray = image_rgba.convert("L")
+        mask_resized = np.array(image_gray) < 200  # يعتبر أي درجة داكنة شعار
 
-    tile = image.resize((50, 50))
-    final_img = Image.new("L", (output_size, output_size), "white")
+    # استخراج مركز الشعار الحقيقي تلقائيًا
+    coords = np.column_stack(np.where(mask_resized))
+    center_y, center_x = coords.mean(axis=0).astype(int)
+
+    # تحضير وحدة التكرار
+    tile = image_rgba.resize((50, 50))
+    final_img = Image.new("RGBA", (output_size, output_size), (255, 255, 255, 0))
 
     for y in range(0, output_size, tile_spacing):
         for x in range(0, output_size, tile_spacing):
             if not mask_resized[y, x]:
                 continue
 
-            # حساب التدرج حسب النوع
+            # نوع التدرج
             if gradient_type == "دائري":
                 dist = np.hypot(x - center_x, y - center_y)
-                max_dist = np.hypot(center_x, center_y)
+                max_dist = np.hypot(output_size, output_size)
             elif gradient_type == "أفقي":
                 dist = abs(x - center_x)
-                max_dist = center_x
+                max_dist = output_size
             elif gradient_type == "عمودي":
                 dist = abs(y - center_y)
-                max_dist = center_y
+                max_dist = output_size
 
             scale = 1.0 - (dist / max_dist)
             tile_size_scaled = max(min_size, int(max_size * scale))
@@ -51,13 +62,13 @@ if uploaded_file:
                 paste_y + tile_size_scaled > output_size):
                 continue
 
-            tile_mask_area = mask_resized[paste_y:paste_y + tile_size_scaled, paste_x:paste_x + tile_size_scaled]
-            if tile_mask_area.shape != (tile_size_scaled, tile_size_scaled):
+            submask = mask_resized[paste_y:paste_y + tile_size_scaled, paste_x:paste_x + tile_size_scaled]
+            if submask.shape != (tile_size_scaled, tile_size_scaled):
                 continue
 
-            if np.all(tile_mask_area):
+            if np.all(submask):
                 tile_scaled = tile.resize((tile_size_scaled, tile_size_scaled))
-                final_img.paste(tile_scaled, (paste_x, paste_y))
+                final_img.paste(tile_scaled, (paste_x, paste_y), tile_scaled)
 
     st.image(final_img, caption="الناتج النهائي", use_column_width=True)
 
