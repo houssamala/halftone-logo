@@ -4,7 +4,7 @@ import tempfile
 from svgpathtools import svg2paths2
 from svgpathtools import Path as SvgPath
 
-st.title("Halftone داخل Path دقيق (SVG)")
+st.title("Halftone داخل Path دقيق (SVG فقط)")
 
 uploaded_file = st.file_uploader("ارفع ملف SVG يحتوي على path فقط", type=["svg"])
 
@@ -19,7 +19,7 @@ if uploaded_file:
         tmp.write(uploaded_file.read())
         tmp_path = tmp.name
 
-    # قراءة المسارات من الملف
+    # قراءة المسارات
     paths, attributes, svg_attributes = svg2paths2(tmp_path)
 
     # تحقق من وجود مسارات
@@ -27,16 +27,24 @@ if uploaded_file:
         st.error("الملف لا يحتوي على أي path صالح داخل SVG.")
         st.stop()
 
-    # استخراج viewBox
-    viewBox = svg_attributes.get("viewBox", "0 0 600 600")
-    vb_values = list(map(float, viewBox.strip().split()))
-    _, _, width, height = vb_values
+    # قراءة الأبعاد من viewBox أو width/height أو fallback
+    try:
+        if "viewBox" in svg_attributes:
+            vb_values = list(map(float, svg_attributes["viewBox"].strip().split()))
+            _, _, width, height = vb_values
+        else:
+            width = float(svg_attributes.get("width", 600))
+            height = float(svg_attributes.get("height", 600))
+    except Exception as e:
+        st.error("تعذر قراءة أبعاد الملف: تأكد من أن SVG يحتوي على viewBox أو أبعاد صالحة.")
+        st.stop()
+
     center_x, center_y = width / 2, height / 2
 
     # استخدام أول path فقط
     path: SvgPath = paths[0]
 
-    # توليد الدوائر داخل المسار فقط
+    # توليد الدوائر داخل الشكل فقط
     circles = []
     for y in range(0, int(height), spacing):
         for x in range(0, int(width), spacing):
@@ -56,7 +64,7 @@ if uploaded_file:
                 radius = max(min_radius, int(max_radius * scale))
                 circles.append(f'<circle cx="{x}" cy="{y}" r="{radius}" fill="black" />')
 
-    # إنشاء ملف SVG النهائي
+    # إخراج SVG النهائي
     svg_output = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {int(width)} {int(height)}">
     {''.join(circles)}
     </svg>'''
