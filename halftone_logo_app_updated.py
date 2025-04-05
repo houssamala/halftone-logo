@@ -1,9 +1,8 @@
 import streamlit as st
 import numpy as np
+import tempfile
 from svgpathtools import svg2paths2
 from svgpathtools import Path as SvgPath
-from svgpathtools import wsvg
-from io import StringIO
 
 st.title("Halftone داخل Path دقيق (SVG)")
 
@@ -15,8 +14,13 @@ if uploaded_file:
     min_radius = st.slider("أصغر نصف قطر", 1, 10, 2)
     max_radius = st.slider("أكبر نصف قطر", 5, 50, 15)
 
-    # قراءة المسارات والخصائص
-    paths, attributes, svg_attributes = svg2paths2(uploaded_file)
+    # حفظ الملف مؤقتًا على القرص
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".svg") as tmp:
+        tmp.write(uploaded_file.read())
+        tmp_path = tmp.name
+
+    # قراءة المسارات
+    paths, attributes, svg_attributes = svg2paths2(tmp_path)
 
     viewBox = svg_attributes.get("viewBox", "0 0 600 600")
     vb_values = list(map(float, viewBox.split()))
@@ -26,7 +30,7 @@ if uploaded_file:
     # استخدام أول path فقط
     path: SvgPath = paths[0]
 
-    # توليد الدوائر داخل المسار فقط
+    # توليد الدوائر داخل الشكل
     circles = []
     for y in range(0, int(height), spacing):
         for x in range(0, int(width), spacing):
