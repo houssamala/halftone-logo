@@ -14,23 +14,29 @@ if uploaded_file:
     min_radius = st.slider("أصغر نصف قطر", 1, 10, 2)
     max_radius = st.slider("أكبر نصف قطر", 5, 50, 15)
 
-    # حفظ الملف مؤقتًا على القرص
+    # حفظ الملف مؤقتًا
     with tempfile.NamedTemporaryFile(delete=False, suffix=".svg") as tmp:
         tmp.write(uploaded_file.read())
         tmp_path = tmp.name
 
-    # قراءة المسارات
+    # قراءة المسارات من الملف
     paths, attributes, svg_attributes = svg2paths2(tmp_path)
 
+    # تحقق من وجود مسارات
+    if not paths:
+        st.error("الملف لا يحتوي على أي path صالح داخل SVG.")
+        st.stop()
+
+    # استخراج viewBox
     viewBox = svg_attributes.get("viewBox", "0 0 600 600")
-    vb_values = list(map(float, viewBox.split()))
+    vb_values = list(map(float, viewBox.strip().split()))
     _, _, width, height = vb_values
     center_x, center_y = width / 2, height / 2
 
     # استخدام أول path فقط
     path: SvgPath = paths[0]
 
-    # توليد الدوائر داخل الشكل
+    # توليد الدوائر داخل المسار فقط
     circles = []
     for y in range(0, int(height), spacing):
         for x in range(0, int(width), spacing):
@@ -50,6 +56,7 @@ if uploaded_file:
                 radius = max(min_radius, int(max_radius * scale))
                 circles.append(f'<circle cx="{x}" cy="{y}" r="{radius}" fill="black" />')
 
+    # إنشاء ملف SVG النهائي
     svg_output = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {int(width)} {int(height)}">
     {''.join(circles)}
     </svg>'''
