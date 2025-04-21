@@ -4,7 +4,6 @@ from PIL import Image
 import numpy as np
 import io
 import zipfile
-import cairosvg
 import base64
 
 st.set_page_config(page_title="Halftone Generator", layout="centered")
@@ -60,13 +59,19 @@ if uploaded_file:
     canvas.append('</svg>')
     final_svg = "\n".join(canvas)
 
-    # عرض
+    # عرض النتيجة
     st.markdown("### 🖼️ المعاينة:")
     st.components.v1.html(final_svg, height=output_size + 20)
 
-    # تحميل
+    # تحميل SVG داخل ملف مضغوط
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
         zipf.writestr("halftone_output.svg", final_svg)
     zip_buffer.seek(0)
-    st.download_button("📥 تحميل النتيجة كـ SVG", zip_buffer, "halftone_output.zip", mime="application/_
+
+    st.download_button(
+        "📥 تحميل النتيجة كـ SVG",
+        zip_buffer,
+        file_name="halftone_output.zip",
+        mime="application/zip"
+    )
