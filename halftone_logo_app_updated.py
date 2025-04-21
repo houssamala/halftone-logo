@@ -1,10 +1,10 @@
-# halftone_dense_fill.py
+# halftone_fill_with_scaling.py
 import streamlit as st
 from PIL import Image
 import numpy as np
 import io
 
-st.title("تعبئة كاملة للشكل بـ Halftone بدون تداخل أو فراغات")
+st.title("تعبئة كاملة مع تأثير Halftone حقيقي (الحجم يتدرج حسب البعد)")
 
 uploaded_file = st.file_uploader("ارفع صورة الشعار (شكل داكن على خلفية فاتحة)", type=["png", "jpg", "jpeg"])
 
@@ -18,13 +18,20 @@ if uploaded_file:
 
     tile = image.convert("L").resize((50, 50))
     tile = tile.crop((5, 5, 45, 45))  # إزالة الحواف
-    tile_size = 10
 
     final_img = Image.new("L", (output_size, output_size), "white")
+    max_dist = np.hypot(center_x, center_y)
 
-    step = tile_size + 2  # بين كل عنصر والآخر
-    for y in range(0, output_size, step):
-        for x in range(0, output_size, step):
+    base_step = 12  # بين التكرارات
+    min_size = 4
+    max_size = 12
+
+    for y in range(0, output_size, base_step):
+        for x in range(0, output_size, base_step):
+            dist = np.hypot(x - center_x, y - center_y)
+            scale = 1.0 - (dist / max_dist)
+            tile_size = int(min_size + (max_size - min_size) * scale)
+
             px = x - tile_size // 2
             py = y - tile_size // 2
 
@@ -40,12 +47,12 @@ if uploaded_file:
                 continue
 
             inside_ratio = np.mean(tile_mask_area)
-            if inside_ratio >= 0.95:  # أعلى دقة ممكنة
+            if inside_ratio >= 0.85:
                 tile_scaled = tile.resize((tile_size, tile_size), Image.LANCZOS)
                 final_img.paste(tile_scaled, (px, py))
 
-    st.image(final_img, caption="تعبئة كاملة داخل الشكل", use_container_width=True)
+    st.image(final_img, caption="Halftone بتعبئة كاملة وتدرج بالحجم", use_container_width=True)
 
     buf = io.BytesIO()
     final_img.save(buf, format="PNG")
-    st.download_button("تحميل الصورة", buf.getvalue(), file_name="halftone_filled_correct.png", mime="image/png")
+    st.download_button("تحميل الصورة", buf.getvalue(), file_name="halftone_filled_scaled.png", mime="image/png")
