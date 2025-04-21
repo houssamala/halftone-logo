@@ -3,8 +3,9 @@ import numpy as np
 import tempfile
 from svgpathtools import svg2paths2
 from svgpathtools import Path as SvgPath
+from matplotlib.path import Path as MplPath
 
-st.title("Halftone داخل Path دقيق (SVG فقط)")
+st.title("Halftone داخل شكل SVG (مع معالجة دقيقة للتقاطع)")
 
 uploaded_file = st.file_uploader("ارفع ملف SVG يحتوي على path فقط", type=["svg"])
 
@@ -19,38 +20,53 @@ if uploaded_file:
         tmp.write(uploaded_file.read())
         tmp_path = tmp.name
 
-    # قراءة المسارات والخصائص
+    # قراءة المسارات
     paths, attributes, svg_attributes = svg2paths2(tmp_path)
 
     if not paths:
         st.error("الملف لا يحتوي على أي path داخل SVG.")
         st.stop()
 
-    # محاولة استخراج الحجم من viewBox أو width/height
+    # استخراج الحجم من viewBox أو من width/height
     try:
         if "viewBox" in svg_attributes:
             vb_values = list(map(float, svg_attributes["viewBox"].strip().split()))
             if len(vb_values) == 4:
                 _, _, width, height = vb_values
             else:
-                st.error("الملف يحتوي على viewBox غير صالح (يجب أن يتكون من 4 أرقام).")
+                st.error("الملف يحتوي على viewBox غير صالح.")
                 st.stop()
         else:
             width = float(svg_attributes.get("width", 600))
             height = float(svg_attributes.get("height", 600))
     except:
-        st.error("تعذر تحديد حجم الملف. تأكد من وجود viewBox أو width/height.")
+        st.error("تعذر تحديد أبعاد الملف. تأكد من وجود viewBox أو width/height.")
         st.stop()
 
     center_x, center_y = width / 2, height / 2
     path: SvgPath = paths[0]
 
-    # توليد الدوائر داخل الشكل فقط
+    # تحويل SvgPath إلى نقاط لرسم path تقني بدقة
+    points = []
+    for segment in path:
+        try:
+            points.append((segment.start.real, segment.start.imag))
+            points.append((segment.end.real, segment.end.imag))
+        except:
+            continue
+
+    if len(points) < 3:
+        st.error("لا يمكن تحليل الشكل لأن عدد النقاط قليل جدًا.")
+        st.stop()
+
+    # بناء شكل مغلق للتقاطع
+    mpl_path = MplPath(points, closed=True)
+
+    # توليد الدوائر داخل المسار
     circles = []
     for y in range(0, int(height), spacing):
         for x in range(0, int(width), spacing):
-            point = complex(x, y)
-            if path.contains(point):
+            if mpl_path.contains_point((x, y)):
                 if gradient_type == "دائري":
                     dist = np.hypot(x - center_x, y - center_y)
                     max_dist = np.hypot(width, height)
