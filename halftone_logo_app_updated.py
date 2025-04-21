@@ -21,7 +21,7 @@ if uploaded_file:
     svg_elements = []
 
     if uploaded_file.name.lower().endswith(".svg"):
-        # ----------- دعم SVG ----------
+        # ----------- SVG ------------
         svg_data = uploaded_file.read().decode("utf-8")
         doc = minidom.parseString(svg_data)
         supported_tags = ["path", "rect", "circle", "ellipse", "polygon", "polyline"]
@@ -39,7 +39,7 @@ if uploaded_file:
             st.stop()
 
     else:
-        # ---------- دعم الصور ----------
+        # ---------- Image ----------
         img = Image.open(uploaded_file).convert("RGBA").resize((60, 60))
         buffer = io.BytesIO()
         img.save(buffer, format="PNG")
@@ -47,23 +47,30 @@ if uploaded_file:
         img_href = f'data:image/png;base64,{img_b64}'
         svg_elements.append(f'<image href="{img_href}" width="60" height="60"/>')
 
-    # ----------- بناء التكرارات ----------
+    # ----------- بناء SVG مع توسيط ----------
     canvas = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{output_size}" height="{output_size}" viewBox="0 0 {output_size} {output_size}">']
     canvas.append(f'<rect width="100%" height="100%" fill="{bg_color}"/>')
 
-    for y in range(0, output_size, step):
-        for x in range(0, output_size, step):
+    cols = output_size // step
+    rows = output_size // step
+    offset_x = (output_size - cols * step) // 2
+    offset_y = (output_size - rows * step) // 2
+
+    for row in range(rows):
+        for col in range(cols):
+            x = offset_x + col * step
+            y = offset_y + row * step
             g = f'<g transform="translate({x},{y}) scale({scale})">' + ''.join(svg_elements) + '</g>'
             canvas.append(g)
 
     canvas.append('</svg>')
     final_svg = "\n".join(canvas)
 
-    # عرض النتيجة
+    # عرض
     st.markdown("### 🖼️ المعاينة:")
     st.components.v1.html(final_svg, height=output_size + 20)
 
-    # تحميل SVG داخل ملف مضغوط
+    # تحميل ملف SVG مضغوط
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
         zipf.writestr("halftone_output.svg", final_svg)
