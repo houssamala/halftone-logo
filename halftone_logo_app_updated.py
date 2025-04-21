@@ -1,10 +1,10 @@
-# halftone_fill_with_scaling.py
+# halftone_fill_with_strong_scaling.py
 import streamlit as st
 from PIL import Image
 import numpy as np
 import io
 
-st.title("تعبئة كاملة مع تأثير Halftone حقيقي (الحجم يتدرج حسب البعد)")
+st.title("Halftone قوي بتدرج واضح في الحجم")
 
 uploaded_file = st.file_uploader("ارفع صورة الشعار (شكل داكن على خلفية فاتحة)", type=["png", "jpg", "jpeg"])
 
@@ -17,14 +17,14 @@ if uploaded_file:
     mask = np.array(img_resized) < 128
 
     tile = image.convert("L").resize((50, 50))
-    tile = tile.crop((5, 5, 45, 45))  # إزالة الحواف
+    tile = tile.crop((5, 5, 45, 45))
 
     final_img = Image.new("L", (output_size, output_size), "white")
     max_dist = np.hypot(center_x, center_y)
 
-    base_step = 12  # بين التكرارات
-    min_size = 4
-    max_size = 12
+    base_step = 14  # بين التكرارات
+    min_size = 1    # أصغر حجم = نقطة صغيرة جدًا
+    max_size = 24   # أكبر حجم = واضح وضوح تام
 
     for y in range(0, output_size, base_step):
         for x in range(0, output_size, base_step):
@@ -51,8 +51,8 @@ if uploaded_file:
                 tile_scaled = tile.resize((tile_size, tile_size), Image.LANCZOS)
                 final_img.paste(tile_scaled, (px, py))
 
-    st.image(final_img, caption="Halftone بتعبئة كاملة وتدرج بالحجم", use_container_width=True)
+    st.image(final_img, caption="Halftone بتدرج حجمي واضح", use_container_width=True)
 
     buf = io.BytesIO()
     final_img.save(buf, format="PNG")
-    st.download_button("تحميل الصورة", buf.getvalue(), file_name="halftone_filled_scaled.png", mime="image/png")
+    st.download_button("تحميل الصورة", buf.getvalue(), file_name="halftone_high_contrast.png", mime="image/png")
