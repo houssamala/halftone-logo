@@ -1,12 +1,12 @@
-# halftone_fill_shape.py
+# halftone_dense_fill.py
 import streamlit as st
 from PIL import Image
 import numpy as np
 import io
 
-st.title("تعبئة الشكل بالكامل بتأثير Halftone بدون تداخل")
+st.title("تعبئة كاملة للشكل بـ Halftone بدون تداخل أو فراغات")
 
-uploaded_file = st.file_uploader("ارفع صورة الشعار (شكل مغلق بلون داكن على خلفية فاتحة)", type=["png", "jpg", "jpeg"])
+uploaded_file = st.file_uploader("ارفع صورة الشعار (شكل داكن على خلفية فاتحة)", type=["png", "jpg", "jpeg"])
 
 if uploaded_file:
     image = Image.open(uploaded_file).convert("L")
@@ -17,37 +17,35 @@ if uploaded_file:
     mask = np.array(img_resized) < 128
 
     tile = image.convert("L").resize((50, 50))
-    tile = tile.crop((5, 5, 45, 45))  # نزيل الحواف
-    tile_size = 10  # حجم التكرار النهائي
+    tile = tile.crop((5, 5, 45, 45))  # إزالة الحواف
+    tile_size = 10
 
     final_img = Image.new("L", (output_size, output_size), "white")
 
-    # فقط النقاط داخل الشكل
-    points = np.argwhere(mask)
-    step = 4  # المسافة بين التكرارات المحتملة
+    step = tile_size + 2  # بين كل عنصر والآخر
+    for y in range(0, output_size, step):
+        for x in range(0, output_size, step):
+            px = x - tile_size // 2
+            py = y - tile_size // 2
 
-    for i, (y, x) in enumerate(points[::step]):
-        px = x - tile_size // 2
-        py = y - tile_size // 2
+            if (
+                px < 0 or py < 0 or
+                px + tile_size > output_size or
+                py + tile_size > output_size
+            ):
+                continue
 
-        if (
-            px < 0 or py < 0 or
-            px + tile_size > output_size or
-            py + tile_size > output_size
-        ):
-            continue
+            tile_mask_area = mask[py:py + tile_size, px:px + tile_size]
+            if tile_mask_area.shape != (tile_size, tile_size):
+                continue
 
-        tile_mask_area = mask[py:py + tile_size, px:px + tile_size]
-        if tile_mask_area.shape != (tile_size, tile_size):
-            continue
-
-        inside_ratio = np.mean(tile_mask_area)
-        if inside_ratio >= 0.9:
-            tile_scaled = tile.resize((tile_size, tile_size), Image.LANCZOS)
-            final_img.paste(tile_scaled, (px, py))
+            inside_ratio = np.mean(tile_mask_area)
+            if inside_ratio >= 0.95:  # أعلى دقة ممكنة
+                tile_scaled = tile.resize((tile_size, tile_size), Image.LANCZOS)
+                final_img.paste(tile_scaled, (px, py))
 
     st.image(final_img, caption="تعبئة كاملة داخل الشكل", use_container_width=True)
 
     buf = io.BytesIO()
     final_img.save(buf, format="PNG")
-    st.download_button("تحميل الصورة", buf.getvalue(), file_name="halftone_full_fill.png", mime="image/png")
+    st.download_button("تحميل الصورة", buf.getvalue(), file_name="halftone_filled_correct.png", mime="image/png")
