@@ -42,9 +42,8 @@ if uploaded_file:
                 tile_scaled = tile.resize((tile_size_scaled, tile_size_scaled))
                 final_img.paste(tile_scaled, (paste_x, paste_y))
 
-    st.image(final_img, caption="الناتج النهائي", use_column_width=True)
+    st.image(final_img, caption="الناتج النهائي", use_container_width=True)
 
-    # Download button
     buf = io.BytesIO()
     final_img.save(buf, format="PNG")
     st.download_button("تحميل الصورة", buf.getvalue(), file_name="halftone_result.png", mime="image/png")
