@@ -2,6 +2,7 @@ import streamlit as st
 from PIL import Image
 import numpy as np
 import io
+import base64
 
 st.set_page_config(page_title="Halftone Logo Generator", layout="centered")
 
@@ -28,9 +29,13 @@ if uploaded_file:
     img_resized = image.resize((output_size, output_size))
     mask = np.array(img_resized) < 128
 
-    tile = image.convert("L").resize((50, 50))
-    tile = tile.crop((5, 5, 45, 45))  # إزالة الحواف
-    tile_np = np.array(tile)
+    tile = image.convert("RGBA").resize((50, 50))
+    tile = tile.crop((5, 5, 45, 45))
+
+    # تحويل الصورة إلى base64 PNG
+    buffer = io.BytesIO()
+    tile.save(buffer, format="PNG")
+    base64_tile = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
     step = output_size // repetition
     svg_elements = [f'<rect width="100%" height="100%" fill="{bg_color}" />']
@@ -58,9 +63,8 @@ if uploaded_file:
             inside_ratio = np.mean(tile_mask_area)
             if inside_ratio >= 0.85:
                 svg_elements.append(
-                    f'<image href="data:image/png;base64,{uploaded_file.getvalue().hex()}" '
-                    f'x="{px}" y="{py}" width="{tile_size}" height="{tile_size}" '
-                    f'preserveAspectRatio="none" style="filter: brightness(0) saturate(100%) sepia(100%) hue-rotate(0deg);" />'
+                    f'<image href="data:image/png;base64,{base64_tile}" '
+                    f'x="{px}" y="{py}" width="{tile_size}" height="{tile_size}" />'
                 )
 
     svg_out = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{output_size}" height="{output_size}" viewBox="0 0 {output_size} {output_size}">
@@ -69,7 +73,7 @@ if uploaded_file:
 
     # عرض SVG
     st.markdown("### 🖼️ النتيجة النهائية:")
-    st.markdown(f'<div style="border:1px solid #ddd">{svg_out}</div>', unsafe_allow_html=True)
+    st.components.v1.html(svg_out, height=output_size + 20)
 
     # تحميل SVG
     st.download_button("📥 تحميل كـ SVG", svg_out, file_name="halftone_logo.svg", mime="image/svg+xml")
