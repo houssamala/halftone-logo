@@ -15,13 +15,15 @@ if uploaded_file:
     st.sidebar.header("⚙️ الإعدادات")
     output_size = 600
     step = st.sidebar.slider("📏 عدد التكرارات (كل كم بكسل)", 20, 100, 60)
-    scale = st.sidebar.slider("🔍 الحجم النسبي", 0.1, 2.0, 0.4)
+    scale = st.sidebar.slider("🔍 الحجم النسبي لكل عنصر", 0.2, 2.0, 0.6)
     bg_color = st.sidebar.color_picker("🎨 لون الخلفية", "#FFFFFF")
 
     svg_elements = []
+    element_width = 40
+    element_height = 40
 
     if uploaded_file.name.lower().endswith(".svg"):
-        # ----------- SVG ------------
+        # ----------- دعم SVG ----------
         svg_data = uploaded_file.read().decode("utf-8")
         doc = minidom.parseString(svg_data)
         supported_tags = ["path", "rect", "circle", "ellipse", "polygon", "polyline"]
@@ -39,13 +41,13 @@ if uploaded_file:
             st.stop()
 
     else:
-        # ---------- Image ----------
-        img = Image.open(uploaded_file).convert("RGBA").resize((60, 60))
+        # ---------- دعم الصور ----------
+        img = Image.open(uploaded_file).convert("RGBA").resize((element_width, element_height))
         buffer = io.BytesIO()
         img.save(buffer, format="PNG")
         img_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
         img_href = f'data:image/png;base64,{img_b64}'
-        svg_elements.append(f'<image href="{img_href}" width="60" height="60"/>')
+        svg_elements.append(f'<image href="{img_href}" width="{element_width}" height="{element_height}"/>')
 
     # ----------- بناء SVG مع توسيط ----------
     canvas = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{output_size}" height="{output_size}" viewBox="0 0 {output_size} {output_size}">']
@@ -66,11 +68,11 @@ if uploaded_file:
     canvas.append('</svg>')
     final_svg = "\n".join(canvas)
 
-    # عرض
+    # عرض SVG مباشرة داخل الصفحة
     st.markdown("### 🖼️ المعاينة:")
     st.components.v1.html(final_svg, height=output_size + 20)
 
-    # تحميل ملف SVG مضغوط
+    # تحميل كـ SVG داخل ملف ZIP
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
         zipf.writestr("halftone_output.svg", final_svg)
