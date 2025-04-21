@@ -3,30 +3,40 @@ from PIL import Image
 import numpy as np
 import io
 
-st.title("Halftone بتدرج حجمي واضح بدون تداخل")
+st.set_page_config(page_title="Halftone Logo Generator", layout="centered")
 
-uploaded_file = st.file_uploader("ارفع صورة الشعار (شكل داكن على خلفية فاتحة)", type=["png", "jpg", "jpeg"])
+st.markdown("## 🎨 مولّد تأثير Halftone داخل شعارك")
+st.markdown("ارفع شعارك (لون داكن على خلفية فاتحة) واختر الإعدادات")
+
+uploaded_file = st.file_uploader("🔺 ارفع الشعار (PNG أو JPG)", type=["png", "jpg", "jpeg"])
 
 if uploaded_file:
-    image = Image.open(uploaded_file).convert("L")
+    # إعدادات التحكم
+    st.sidebar.header("⚙️ الإعدادات")
     output_size = 600
+    shape_color = st.sidebar.color_picker("🎯 لون الشعار", "#000000")
+    bg_color = st.sidebar.color_picker("🌈 لون الخلفية", "#FFFFFF")
+
+    repetition = st.sidebar.slider("📦 عدد التكرارات (أفقيًا)", 10, 60, 28)
+    min_size = st.sidebar.slider("🔹 أصغر حجم", 2, 20, 3)
+    max_size = st.sidebar.slider("🔸 أكبر حجم", min_size + 1, 50, 24)
+
+    image = Image.open(uploaded_file).convert("L")
     center_x, center_y = output_size // 2, output_size // 2
+    max_dist = np.hypot(center_x, center_y)
 
     img_resized = image.resize((output_size, output_size))
     mask = np.array(img_resized) < 128
 
     tile = image.convert("L").resize((50, 50))
-    tile = tile.crop((5, 5, 45, 45))  # قص الحواف لتجنب التداخل الخارجي
+    tile = tile.crop((5, 5, 45, 45))  # إزالة الحواف
+    tile_np = np.array(tile)
 
-    final_img = Image.new("L", (output_size, output_size), "white")
-    max_dist = np.hypot(center_x, center_y)
+    step = output_size // repetition
+    svg_elements = [f'<rect width="100%" height="100%" fill="{bg_color}" />']
 
-    min_size = 2
-    max_size = 24
-    base_step = max_size + 2  # مهم جدًا لمنع التداخل
-
-    for y in range(0, output_size, base_step):
-        for x in range(0, output_size, base_step):
+    for y in range(0, output_size, step):
+        for x in range(0, output_size, step):
             dist = np.hypot(x - center_x, y - center_y)
             scale = 1.0 - (dist / max_dist)
             tile_size = int(min_size + (max_size - min_size) * scale)
@@ -47,11 +57,19 @@ if uploaded_file:
 
             inside_ratio = np.mean(tile_mask_area)
             if inside_ratio >= 0.85:
-                tile_scaled = tile.resize((tile_size, tile_size), Image.LANCZOS)
-                final_img.paste(tile_scaled, (px, py))
+                svg_elements.append(
+                    f'<image href="data:image/png;base64,{uploaded_file.getvalue().hex()}" '
+                    f'x="{px}" y="{py}" width="{tile_size}" height="{tile_size}" '
+                    f'preserveAspectRatio="none" style="filter: brightness(0) saturate(100%) sepia(100%) hue-rotate(0deg);" />'
+                )
 
-    st.image(final_img, caption="Halftone بتدرج واضح بدون تداخل", use_container_width=True)
+    svg_out = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{output_size}" height="{output_size}" viewBox="0 0 {output_size} {output_size}">
+    {"".join(svg_elements)}
+    </svg>'''
 
-    buf = io.BytesIO()
-    final_img.save(buf, format="PNG")
-    st.download_button("تحميل الصورة", buf.getvalue(), file_name="halftone_final_no_overlap.png", mime="image/png")
+    # عرض SVG
+    st.markdown("### 🖼️ النتيجة النهائية:")
+    st.markdown(f'<div style="border:1px solid #ddd">{svg_out}</div>', unsafe_allow_html=True)
+
+    # تحميل SVG
+    st.download_button("📥 تحميل كـ SVG", svg_out, file_name="halftone_logo.svg", mime="image/svg+xml")
