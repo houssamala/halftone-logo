@@ -1,86 +1,90 @@
+# halftone_logo_app.py
+
 import streamlit as st
+import xml.etree.ElementTree as ET
 from xml.dom import minidom
-from PIL import Image
-import numpy as np
-import io
 import zipfile
-import base64
+import io
 
-st.set_page_config(page_title="Halftone Generator", layout="centered")
-st.title("🎨 توليد تأثير Halftone من صورة أو SVG")
+st.set_page_config(layout="wide")
+st.title("🎨 تأثير Halftone داخل شكل شعار")
 
-uploaded_file = st.file_uploader("🔼 ارفع شعارك (PNG, JPG, SVG)", type=["svg", "png", "jpg", "jpeg"])
+# واجهة المستخدم
+st.sidebar.markdown("### إعدادات التكرار")
+repetitions = st.sidebar.slider("عدد التكرارات في العرض", 10, 100, 40)
+bg_color = st.sidebar.color_picker("لون الخلفية", "#ffffff")
+tile_color = st.sidebar.color_picker("لون الشكل", "#000000")
 
-if uploaded_file:
-    st.sidebar.header("⚙️ الإعدادات")
-    output_size = 600
-    step = st.sidebar.slider("📏 عدد التكرارات (كل كم بكسل)", 20, 100, 60)
-    scale = st.sidebar.slider("🔍 الحجم النسبي لكل عنصر", 0.2, 2.0, 0.6)
-    bg_color = st.sidebar.color_picker("🎨 لون الخلفية", "#FFFFFF")
+uploaded_shape = st.file_uploader("🔺 ارفع الشعار الأساسي (SVG فقط)", type=["svg"])
+uploaded_tile = st.file_uploader("🔹 ارفع الشكل المتكرر (SVG فقط)", type=["svg"])
+
+canvas_size = 2000
+
+def extract_paths(svg_content):
+    doc = minidom.parseString(svg_content)
+    paths = doc.getElementsByTagName("path")
+    path_elements = [p.toxml() for p in paths]
+    svg_tag = doc.getElementsByTagName("svg")[0]
+
+    vb = svg_tag.getAttribute("viewBox")
+    if vb:
+        _, _, w, h = map(float, vb.strip().split())
+    else:
+        w = float(svg_tag.getAttribute("width").replace("px", ""))
+        h = float(svg_tag.getAttribute("height").replace("px", ""))
+
+    return path_elements, w, h
+
+if uploaded_shape and uploaded_tile:
+    shape_svg = uploaded_shape.read().decode("utf-8")
+    tile_svg = uploaded_tile.read().decode("utf-8")
+
+    shape_paths, shape_w, shape_h = extract_paths(shape_svg)
+    tile_paths, tile_w, tile_h = extract_paths(tile_svg)
+
+    # Auto fit: تصغير العنصر حسب عدد التكرارات المطلوبة
+    tile_target_width = canvas_size / repetitions
+    tile_scale = tile_target_width / tile_w
+    tile_target_height = tile_h * tile_scale
+
+    cols = repetitions
+    rows = int(canvas_size // tile_target_height)
+
+    offset_x = (canvas_size - cols * tile_target_width) / 2
+    offset_y = (canvas_size - rows * tile_target_height) / 2
 
     svg_elements = []
-    element_width = 40
-    element_height = 40
-
-    if uploaded_file.name.lower().endswith(".svg"):
-        # ----------- دعم SVG ----------
-        svg_data = uploaded_file.read().decode("utf-8")
-        doc = minidom.parseString(svg_data)
-        supported_tags = ["path", "rect", "circle", "ellipse", "polygon", "polyline"]
-
-        found = False
-        for tag in supported_tags:
-            nodes = doc.getElementsByTagName(tag)
-            for node in nodes:
-                node_str = node.toxml()
-                svg_elements.append(node_str)
-                found = True
-
-        if not found:
-            st.error("❌ لم يتم العثور على عناصر قابلة للتكرار داخل ملف SVG.")
-            st.stop()
-
-    else:
-        # ---------- دعم الصور ----------
-        img = Image.open(uploaded_file).convert("RGBA").resize((element_width, element_height))
-        buffer = io.BytesIO()
-        img.save(buffer, format="PNG")
-        img_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-        img_href = f'data:image/png;base64,{img_b64}'
-        svg_elements.append(f'<image href="{img_href}" width="{element_width}" height="{element_height}"/>')
-
-    # ----------- بناء SVG مع توسيط ----------
-    canvas = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{output_size}" height="{output_size}" viewBox="0 0 {output_size} {output_size}">']
-    canvas.append(f'<rect width="100%" height="100%" fill="{bg_color}"/>')
-
-    cols = output_size // step
-    rows = output_size // step
-    offset_x = (output_size - cols * step) // 2
-    offset_y = (output_size - rows * step) // 2
 
     for row in range(rows):
         for col in range(cols):
-            x = offset_x + col * step
-            y = offset_y + row * step
-            g = f'<g transform="translate({x},{y}) scale({scale})">' + ''.join(svg_elements) + '</g>'
-            canvas.append(g)
+            x = col * tile_target_width + offset_x
+            y = row * tile_target_height + offset_y
 
-    canvas.append('</svg>')
-    final_svg = "\n".join(canvas)
+            transform = f'translate({x:.2f},{y:.2f}) scale({tile_scale:.4f})'
+            g = f'<g transform="{transform}" fill="{tile_color}">' + ''.join(tile_paths) + '</g>'
+            svg_elements.append(g)
 
-    # عرض SVG مباشرة داخل الصفحة
+    # Canvas النهائي
+    final_svg = f'''
+    <svg width="{canvas_size}" height="{canvas_size}" xmlns="http://www.w3.org/2000/svg">
+        <rect width="100%" height="100%" fill="{bg_color}"/>
+        <defs>
+            <clipPath id="clip-shape">
+                {"".join(shape_paths)}
+            </clipPath>
+        </defs>
+        <g clip-path="url(#clip-shape)">
+            {''.join(svg_elements)}
+        </g>
+    </svg>
+    '''
+
     st.markdown("### 🖼️ المعاينة:")
-    st.components.v1.html(final_svg, height=output_size + 20)
+    st.image(io.BytesIO(final_svg.encode("utf-8")), use_column_width=True)
 
-    # تحميل كـ SVG داخل ملف ZIP
+    # تحميل SVG
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
-        zipf.writestr("halftone_output.svg", final_svg)
+        zipf.writestr("halftone_result.svg", final_svg)
     zip_buffer.seek(0)
-
-    st.download_button(
-        "📥 تحميل النتيجة كـ SVG",
-        zip_buffer,
-        file_name="halftone_output.zip",
-        mime="application/zip"
-    )
+    st.download_button("📥 تحميل النتيجة كـ SVG", zip_buffer, file_name="halftone_output.zip", mime="application/zip")
