@@ -32,7 +32,6 @@ if logo_svg_file and tile_svg_file:
         logo_svg_content = logo_svg_file.read().decode("utf-8")
         tile_svg_content = tile_svg_file.read().decode("utf-8")
 
-        # استخراج مسارات الشعار
         logo_paths, logo_attributes, svg_attributes = svg2paths2(io.StringIO(logo_svg_content))
         tile_paths, _, _ = svg2paths2(io.StringIO(tile_svg_content))
 
@@ -42,7 +41,6 @@ if logo_svg_file and tile_svg_file:
             logo_path = logo_paths[0]
             tile_path = tile_paths[0]
 
-            # أوجد حدود الشعار وقم بمركزته
             xmin, xmax, ymin, ymax = logo_path.bbox()
             logo_width = xmax - xmin
             logo_height = ymax - ymin
