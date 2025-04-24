@@ -1,90 +1,91 @@
-# halftone_logo_app.py
-
 import streamlit as st
 import xml.etree.ElementTree as ET
-from xml.dom import minidom
+from svgpathtools import parse_path, svg2paths
 import zipfile
 import io
+import base64
 
 st.set_page_config(layout="wide")
-st.title("🎨 تأثير Halftone داخل شكل شعار")
-
-# واجهة المستخدم
-st.sidebar.markdown("### إعدادات التكرار")
-repetitions = st.sidebar.slider("عدد التكرارات في العرض", 10, 100, 40)
-bg_color = st.sidebar.color_picker("لون الخلفية", "#ffffff")
-tile_color = st.sidebar.color_picker("لون الشكل", "#000000")
-
-uploaded_shape = st.file_uploader("🔺 ارفع الشعار الأساسي (SVG فقط)", type=["svg"])
-uploaded_tile = st.file_uploader("🔹 ارفع الشكل المتكرر (SVG فقط)", type=["svg"])
+st.title("🎨 تأثير Halftone باستخدام الشعار")
 
 canvas_size = 2000
+col1, col2 = st.columns(2)
 
-def extract_paths(svg_content):
-    doc = minidom.parseString(svg_content)
-    paths = doc.getElementsByTagName("path")
-    path_elements = [p.toxml() for p in paths]
-    svg_tag = doc.getElementsByTagName("svg")[0]
+with col1:
+    uploaded_file = st.file_uploader("📁 ارفع شعارك (PNG, JPG, SVG)", type=["png", "jpg", "jpeg", "svg"])
 
-    vb = svg_tag.getAttribute("viewBox")
-    if vb:
-        _, _, w, h = map(float, vb.strip().split())
+with col2:
+    repetitions = st.slider("🔁 عدد التكرارات (بدون تداخل)", 5, 100, 40)
+    shape_color = st.color_picker("🎨 لون الشكل", "#000000")
+    bg_color = st.color_picker("🖼️ لون الخلفية", "#ffffff")
+
+st.markdown("---")
+
+def scale_paths_to_canvas(paths, viewbox, canvas_size):
+    _, _, vb_width, vb_height = viewbox
+    scale = min(canvas_size / vb_width, canvas_size / vb_height)
+    offset_x = (canvas_size - vb_width * scale) / 2
+    offset_y = (canvas_size - vb_height * scale) / 2
+    scaled_paths = []
+
+    for path in paths:
+        d = ""
+        for segment in path:
+            segment = segment.scaled(scale)
+            segment = segment.translated(offset_x + 0j + offset_y * 1j)
+            d += segment.d()
+        scaled_paths.append(d)
+    
+    return scaled_paths
+
+def extract_paths_from_svg(svg_content):
+    try:
+        tree = ET.ElementTree(ET.fromstring(svg_content))
+        root = tree.getroot()
+        viewBox = root.attrib.get("viewBox", "0 0 1000 1000").split()
+        viewBox = list(map(float, viewBox))
+
+        paths, _ = svg2paths(io.StringIO(svg_content))
+        return scale_paths_to_canvas(paths, viewBox, canvas_size)
+    except Exception as e:
+        st.error(f"❌ خطأ في قراءة ملف SVG: {e}")
+        return []
+
+if uploaded_file:
+    file_content = uploaded_file.read()
+    filename = uploaded_file.name.lower()
+
+    if filename.endswith(".svg"):
+        svg_str = file_content.decode("utf-8")
+        path_data_list = extract_paths_from_svg(svg_str)
+
+        if path_data_list:
+            pattern_svg = ""
+            spacing = canvas_size // repetitions
+
+            for i in range(repetitions):
+                for j in range(repetitions):
+                    scale = 0.2 + (i + j) / (2 * repetitions)
+                    for path_d in path_data_list:
+                        transform = f"translate({j * spacing},{i * spacing}) scale({scale})"
+                        pattern_svg += f'<path d="{path_d}" fill="{shape_color}" transform="{transform}"/>\n'
+
+            final_svg = f'''
+            <svg width="{canvas_size}" height="{canvas_size}" xmlns="http://www.w3.org/2000/svg">
+                <rect width="100%" height="100%" fill="{bg_color}" />
+                {pattern_svg}
+            </svg>
+            '''
+
+            st.markdown("### 🖼️ المعاينة:")
+            st.components.v1.html(final_svg, height=700, scrolling=False)
+
+            # Export as zip
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED) as zip_file:
+                zip_file.writestr("halftone_result.svg", final_svg)
+            st.download_button("📥 تحميل النتيجة كـ SVG", zip_buffer.getvalue(), file_name="halftone_output.zip", mime="application/zip")
+        else:
+            st.error("❌ SVG لا يحتوي على عناصر <path>.")
     else:
-        w = float(svg_tag.getAttribute("width").replace("px", ""))
-        h = float(svg_tag.getAttribute("height").replace("px", ""))
-
-    return path_elements, w, h
-
-if uploaded_shape and uploaded_tile:
-    shape_svg = uploaded_shape.read().decode("utf-8")
-    tile_svg = uploaded_tile.read().decode("utf-8")
-
-    shape_paths, shape_w, shape_h = extract_paths(shape_svg)
-    tile_paths, tile_w, tile_h = extract_paths(tile_svg)
-
-    # Auto fit: تصغير العنصر حسب عدد التكرارات المطلوبة
-    tile_target_width = canvas_size / repetitions
-    tile_scale = tile_target_width / tile_w
-    tile_target_height = tile_h * tile_scale
-
-    cols = repetitions
-    rows = int(canvas_size // tile_target_height)
-
-    offset_x = (canvas_size - cols * tile_target_width) / 2
-    offset_y = (canvas_size - rows * tile_target_height) / 2
-
-    svg_elements = []
-
-    for row in range(rows):
-        for col in range(cols):
-            x = col * tile_target_width + offset_x
-            y = row * tile_target_height + offset_y
-
-            transform = f'translate({x:.2f},{y:.2f}) scale({tile_scale:.4f})'
-            g = f'<g transform="{transform}" fill="{tile_color}">' + ''.join(tile_paths) + '</g>'
-            svg_elements.append(g)
-
-    # Canvas النهائي
-    final_svg = f'''
-    <svg width="{canvas_size}" height="{canvas_size}" xmlns="http://www.w3.org/2000/svg">
-        <rect width="100%" height="100%" fill="{bg_color}"/>
-        <defs>
-            <clipPath id="clip-shape">
-                {"".join(shape_paths)}
-            </clipPath>
-        </defs>
-        <g clip-path="url(#clip-shape)">
-            {''.join(svg_elements)}
-        </g>
-    </svg>
-    '''
-
-    st.markdown("### 🖼️ المعاينة:")
-    st.image(io.BytesIO(final_svg.encode("utf-8")), use_column_width=True)
-
-    # تحميل SVG
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w") as zipf:
-        zipf.writestr("halftone_result.svg", final_svg)
-    zip_buffer.seek(0)
-    st.download_button("📥 تحميل النتيجة كـ SVG", zip_buffer, file_name="halftone_output.zip", mime="application/zip")
+        st.warning("⚠️ حالياً هذا الكود يدعم فقط ملفات SVG لمسارات واضحة.")
