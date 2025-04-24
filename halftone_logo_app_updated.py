@@ -1,93 +1,85 @@
+# halftone_logo_app_updated.py
 import streamlit as st
 import svgwrite
-from xml.dom import minidom
+import xml.etree.ElementTree as ET
+from svgpathtools import parse_path, svg2paths2
 import zipfile
 import io
-from svgpathtools import parse_path
-from svgpathtools import svg2paths2
-import cairosvg
 import base64
 
 st.set_page_config(layout="wide")
-st.title("\U0001F3A8 تأثير Halftone داخل شكل شعار")
+st.title("🎨 تأثير Halftone داخل شكل شعار")
+
+st.markdown("""
+### 🆙 ارفع ملفي SVG:
+- 🔺 الشعار الأساسي (فقط SVG - شكل خارجي مغلق)
+- 🔷 الشكل المتكرر داخل الشعار (فقط SVG)
+""")
 
 col1, col2 = st.columns(2)
 
-with col1:
-    st.markdown("""
-    ### ↑ ارفع ملف SVG:
-    ❌ **(فقط SVG - الشعار الأساسي / شكل خارجي مغلق)**
-    """)
-    logo_file = st.file_uploader("Upload SVG logo shape", type="svg", key="logo")
+logo_svg_file = col1.file_uploader("🔺 ارفع الشعار الأساسي (فقط SVG - شكل خارجي مغلق)", type=["svg"])
+tile_svg_file = col2.file_uploader("🔷 ارفع الشكل المتكرر داخل الشعار (فقط SVG)", type=["svg"])
 
-with col2:
-    st.markdown("""
-    ### ◉ ارفع الشكل المتكرر (SVG فقط)
-    """)
-    tile_file = st.file_uploader("Upload SVG tile shape", type="svg", key="tile")
+repetitions = st.slider("عدد التكرار (كلما زاد قل الحجم)", 10, 200, 80)
+fg_color = st.color_picker("🎨 اختر لون الشكل", "#000000")
+bg_color = st.color_picker("🧱 اختر لون الخلفية", "#ffffff")
 
-bg_color = st.color_picker("لون الخلفية", "#ffffff")
-tile_color = st.color_picker("لون الشكل المتكرر", "#000000")
-
-repetitions = st.slider("عدد التكرارات في كل صف/عمود", 5, 200, 50)
 canvas_size = 2000
 
-if logo_file and tile_file:
+if logo_svg_file and tile_svg_file:
     try:
-        logo_svg = logo_file.read().decode("utf-8")
-        tile_svg = tile_file.read().decode("utf-8")
+        logo_svg_content = logo_svg_file.read().decode("utf-8")
+        tile_svg_content = tile_svg_file.read().decode("utf-8")
 
-        # Extract paths from logo
-        paths, attributes, svg_attributes = svg2paths2(io.StringIO(logo_svg))
-        all_logo_paths = [parse_path(attr['d']) for attr in attributes if 'd' in attr]
+        # استخراج مسارات الشعار
+        logo_paths, logo_attributes, svg_attributes = svg2paths2(io.StringIO(logo_svg_content))
+        tile_paths, _, _ = svg2paths2(io.StringIO(tile_svg_content))
 
-        if not all_logo_paths:
-            st.error("\u274c SVG: لم يتم العثور على عناصر <path> داخل ملف")
+        if not logo_paths or not tile_paths:
+            st.error("❌ لم يتم العثور على عناصر <path> في ملف SVG.")
         else:
-            # Extract tile shape raw path
-            tile_paths, tile_attrs, _ = svg2paths2(io.StringIO(tile_svg))
-            tile_path = tile_paths[0] if tile_paths else None
+            logo_path = logo_paths[0]
+            tile_path = tile_paths[0]
 
-            if tile_path is None:
-                st.error("\u274c SVG: لم يتم العثور على <path> داخل الشكل المتكرر")
-            else:
-                dwg = svgwrite.Drawing(size=(canvas_size, canvas_size))
-                dwg.add(dwg.rect(insert=(0, 0), size=(canvas_size, canvas_size), fill=bg_color))
+            # أوجد حدود الشعار وقم بمركزته
+            xmin, xmax, ymin, ymax = logo_path.bbox()
+            logo_width = xmax - xmin
+            logo_height = ymax - ymin
+            scale = min((canvas_size * 0.8) / logo_width, (canvas_size * 0.8) / logo_height)
 
-                step = canvas_size / repetitions
-                center = canvas_size / 2
-                max_radius = (2 ** 0.5) * center
+            offset_x = (canvas_size - logo_width * scale) / 2 - xmin * scale
+            offset_y = (canvas_size - logo_height * scale) / 2 - ymin * scale
 
-                for i in range(repetitions):
-                    for j in range(repetitions):
-                        x = i * step + step / 2
-                        y = j * step + step / 2
-                        dx = x - center
-                        dy = y - center
-                        dist = (dx**2 + dy**2)**0.5
-                        scale = 1.0 - (dist / max_radius)
-                        scale = max(0.1, scale)
+            dwg = svgwrite.Drawing(size=(canvas_size, canvas_size))
+            dwg.add(dwg.rect(insert=(0, 0), size=(canvas_size, canvas_size), fill=bg_color))
 
-                        for subpath in tile_path.continuous_subpaths():
-                            d = subpath.d()
-                            g = dwg.g(transform=f"translate({x},{y}) scale({scale})", fill=tile_color)
-                            g.add(dwg.path(d=d))
-                            dwg.add(g)
+            step_x = step_y = canvas_size / repetitions
 
-                final_svg = dwg.tostring()
-                st.markdown("#### 🌟 المعاينة:")
-                st.image(io.BytesIO(cairosvg.svg2png(bytestring=final_svg.encode("utf-8"))), use_column_width=True)
+            for row in range(repetitions):
+                for col in range(repetitions):
+                    cx = col * step_x + step_x / 2
+                    cy = row * step_y + step_y / 2
+                    scale_factor = 1 - ((abs(cx - canvas_size / 2) + abs(cy - canvas_size / 2)) / (canvas_size))
+                    tile_size = step_x * 0.6 * scale_factor
 
-                zip_buffer = io.BytesIO()
-                with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED) as zipf:
-                    zipf.writestr("halftone_output.svg", final_svg)
+                    tile_group = svgwrite.container.Group(fill=fg_color)
+                    for segment in tile_path:
+                        tile_group.add(dwg.path(d=segment.d(), transform=f"translate({cx - tile_size/2},{cy - tile_size/2}) scale({tile_size/100})"))
+                    center_point = complex(cx, cy)
+                    if logo_path.contains(center_point):
+                        dwg.add(tile_group)
 
-                st.download_button(
-                    "📄 تحميل النتيجة SVG",
-                    zip_buffer.getvalue(),
-                    file_name="halftone_output.zip",
-                    mime="application/zip"
-                )
+            final_svg = dwg.tostring()
+
+            st.markdown("### 🖼️ المعاينة:")
+            st.components.v1.html(final_svg, height=700)
+
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+                zip_file.writestr("halftone_result.svg", final_svg)
+
+            st.download_button("📥 تحميل النتيجة كـ SVG", zip_buffer.getvalue(), file_name="halftone_output.zip", mime="application/zip")
 
     except Exception as e:
-        st.exception(e)
+        st.error(f"حدث خطأ أثناء المعالجة: {e}")
