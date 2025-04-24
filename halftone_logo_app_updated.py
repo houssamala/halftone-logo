@@ -1,83 +1,77 @@
-# halftone_logo_app_updated.py
 import streamlit as st
-import svgwrite
-import xml.etree.ElementTree as ET
-from svgpathtools import parse_path, svg2paths2
-import zipfile
+from PIL import Image, ImageOps
+import numpy as np
 import io
-import base64
 
-st.set_page_config(layout="wide")
-st.title("🎨 تأثير Halftone داخل شكل شعار")
+st.title("تأثير Halftone داخل شكل الشعار")
 
-st.markdown("""
-### 🆙 ارفع ملفي SVG:
-- 🔺 الشعار الأساسي (فقط SVG - شكل خارجي مغلق)
-- 🔷 الشكل المتكرر داخل الشعار (فقط SVG)
-""")
+uploaded_file = st.file_uploader("ارفع صورة الشعار (PNG مفرغ أو JPEG بخلفية فاتحة)", type=["png", "jpg", "jpeg"])
 
-col1, col2 = st.columns(2)
+if uploaded_file:
+    gradient_type = st.selectbox("نوع التدرج", ["دائري", "أفقي", "عمودي"])
+    tile_spacing = st.slider("عدد التكرارات (كلما قلّ الرقم زادت الكثافة)", 5, 50, 10)
+    min_size = st.slider("أصغر حجم للتكرار", 2, 20, 5)
+    max_size = st.slider("أكبر حجم للتكرار", 10, 100, 20)
 
-logo_svg_file = col1.file_uploader("🔺 ارفع الشعار الأساسي (فقط SVG - شكل خارجي مغلق)", type=["svg"])
-tile_svg_file = col2.file_uploader("🔷 ارفع الشكل المتكرر داخل الشعار (فقط SVG)", type=["svg"])
+    image_rgba = Image.open(uploaded_file).convert("RGBA")
+    output_size = 600
+    image_rgba = image_rgba.resize((output_size, output_size))
+    r, g, b, a = image_rgba.split()
 
-repetitions = st.slider("عدد التكرار (كلما زاد قل الحجم)", 10, 200, 80)
-fg_color = st.color_picker("🎨 اختر لون الشكل", "#000000")
-bg_color = st.color_picker("🧱 اختر لون الخلفية", "#ffffff")
+    # كشف الشعار حسب الشفافية أو التباين
+    if a.getextrema()[0] < 255:
+        # PNG بخلفية شفافة: استخدم alpha
+        mask_resized = np.array(a) > 0
+    else:
+        # JPEG أو PNG غير شفاف: استخدم التباين
+        image_gray = image_rgba.convert("L")
+        mask_resized = np.array(image_gray) < 200  # يعتبر أي درجة داكنة شعار
 
-canvas_size = 2000
+    # استخراج مركز الشعار الحقيقي تلقائيًا
+    coords = np.column_stack(np.where(mask_resized))
+    center_y, center_x = coords.mean(axis=0).astype(int)
 
-if logo_svg_file and tile_svg_file:
-    try:
-        logo_svg_content = logo_svg_file.read().decode("utf-8")
-        tile_svg_content = tile_svg_file.read().decode("utf-8")
+    # تحضير وحدة التكرار
+    tile = image_rgba.resize((50, 50))
+    final_img = Image.new("RGBA", (output_size, output_size), (255, 255, 255, 0))
 
-        logo_paths, logo_attributes, svg_attributes = svg2paths2(io.StringIO(logo_svg_content))
-        tile_paths, _, _ = svg2paths2(io.StringIO(tile_svg_content))
+    for y in range(0, output_size, tile_spacing):
+        for x in range(0, output_size, tile_spacing):
+            if not mask_resized[y, x]:
+                continue
 
-        if not logo_paths or not tile_paths:
-            st.error("❌ لم يتم العثور على عناصر <path> في ملف SVG.")
-        else:
-            logo_path = logo_paths[0]
-            tile_path = tile_paths[0]
+            # نوع التدرج
+            if gradient_type == "دائري":
+                dist = np.hypot(x - center_x, y - center_y)
+                max_dist = np.hypot(output_size, output_size)
+            elif gradient_type == "أفقي":
+                dist = abs(x - center_x)
+                max_dist = output_size
+            elif gradient_type == "عمودي":
+                dist = abs(y - center_y)
+                max_dist = output_size
 
-            xmin, xmax, ymin, ymax = logo_path.bbox()
-            logo_width = xmax - xmin
-            logo_height = ymax - ymin
-            scale = min((canvas_size * 0.8) / logo_width, (canvas_size * 0.8) / logo_height)
+            scale = 1.0 - (dist / max_dist)
+            tile_size_scaled = max(min_size, int(max_size * scale))
 
-            offset_x = (canvas_size - logo_width * scale) / 2 - xmin * scale
-            offset_y = (canvas_size - logo_height * scale) / 2 - ymin * scale
+            paste_x = x - tile_size_scaled // 2
+            paste_y = y - tile_size_scaled // 2
 
-            dwg = svgwrite.Drawing(size=(canvas_size, canvas_size))
-            dwg.add(dwg.rect(insert=(0, 0), size=(canvas_size, canvas_size), fill=bg_color))
+            if (paste_x < 0 or paste_y < 0 or 
+                paste_x + tile_size_scaled > output_size or 
+                paste_y + tile_size_scaled > output_size):
+                continue
 
-            step_x = step_y = canvas_size / repetitions
+            submask = mask_resized[paste_y:paste_y + tile_size_scaled, paste_x:paste_x + tile_size_scaled]
+            if submask.shape != (tile_size_scaled, tile_size_scaled):
+                continue
 
-            for row in range(repetitions):
-                for col in range(repetitions):
-                    cx = col * step_x + step_x / 2
-                    cy = row * step_y + step_y / 2
-                    scale_factor = 1 - ((abs(cx - canvas_size / 2) + abs(cy - canvas_size / 2)) / (canvas_size))
-                    tile_size = step_x * 0.6 * scale_factor
+            if np.all(submask):
+                tile_scaled = tile.resize((tile_size_scaled, tile_size_scaled))
+                final_img.paste(tile_scaled, (paste_x, paste_y), tile_scaled)
 
-                    tile_group = svgwrite.container.Group(fill=fg_color)
-                    for segment in tile_path:
-                        tile_group.add(dwg.path(d=segment.d(), transform=f"translate({cx - tile_size/2},{cy - tile_size/2}) scale({tile_size/100})"))
-                    center_point = complex(cx, cy)
-                    if logo_path.contains(center_point):
-                        dwg.add(tile_group)
+    st.image(final_img, caption="الناتج النهائي", use_column_width=True)
 
-            final_svg = dwg.tostring()
-
-            st.markdown("### 🖼️ المعاينة:")
-            st.components.v1.html(final_svg, height=700)
-
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w") as zip_file:
-                zip_file.writestr("halftone_result.svg", final_svg)
-
-            st.download_button("📥 تحميل النتيجة كـ SVG", zip_buffer.getvalue(), file_name="halftone_output.zip", mime="application/zip")
-
-    except Exception as e:
-        st.error(f"حدث خطأ أثناء المعالجة: {e}")
+    buf = io.BytesIO()
+    final_img.save(buf, format="PNG")
+    st.download_button("تحميل الصورة", buf.getvalue(), file_name="halftone_result.png", mime="image/png")
